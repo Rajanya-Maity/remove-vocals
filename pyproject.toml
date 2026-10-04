@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leadcut"
+version = "0.1.1"
+description = "Remove only the lead vocal from chosen parts of a song, leaving everything else bit-identical."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+# Pick ONE of these for the separation models:
+cpu = ["audio-separator[cpu]>=0.30", "audioread>=3.0"]
+gpu = ["audio-separator[gpu]>=0.30", "audioread>=3.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+leadcut = "leadcut.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+leadcut = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

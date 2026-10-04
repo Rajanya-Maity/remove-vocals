@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "leadcut: open dashboard",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "leadcut",
+      "args": ["gui"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "leadcut: doctor --fix",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "leadcut",
+      "args": ["doctor", "--fix"],
+      "console": "integratedTerminal"
+    }
+  ]
+}

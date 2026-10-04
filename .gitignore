@@ -1,0 +1,25 @@
+__pycache__/
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+
+# Never commit songs, stems or model weights
+leadcut_work/
+models/
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.ogg
+*.opus
+*.mp4
+*.onnx
+*.ckpt
+*.pth
+*.pt
+!tests/data/*.wav
+
+leadcut_output/

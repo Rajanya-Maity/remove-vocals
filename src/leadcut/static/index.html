@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>leadcut: lead vocal remover</title>
+<style>
+  :root {
+    --bg:#0f1218; --panel:#171c26; --panel2:#1d2330; --line:#2a3242; --text:#e6e9f0; --muted:#8c96ab;
+    --accent:#ffb84d; --accent2:#4da3ff; --good:#4cd08a; --bad:#ff6b6b; --warn:#ffd24d;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:18px; margin:0; letter-spacing:.3px; }
+  header h1 span { color:var(--accent); }
+  header .sp { flex:1; }
+  main { max-width:1280px; margin:0 auto; padding:16px 20px 60px; display:grid; gap:16px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .card h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; }
+  button, select, input[type=text], textarea {
+    background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font:inherit;
+  }
+  button { cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--accent2); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--accent); color:#1a1305; border-color:var(--accent); font-weight:600; }
+  button.primary:hover:not(:disabled) { filter:brightness(1.08); border-color:var(--accent); }
+  button.danger:hover:not(:disabled) { border-color:var(--bad); color:var(--bad); }
+  button.small { padding:3px 9px; font-size:12px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; background:var(--panel2); }
+  .seg button.on { background:var(--accent2); color:#06121f; font-weight:600; }
+  .muted { color:var(--muted); }
+  .chip { background:var(--panel2); border:1px solid var(--line); border-radius:999px; padding:2px 10px; font-size:12px; color:var(--muted); }
+  .warn { background:#2b2410; border:1px solid #5a4a14; color:var(--warn); border-radius:8px; padding:7px 10px; margin-top:8px; font-size:13px; }
+  .err { overflow-wrap:anywhere; background:#2d1519; border:1px solid #6b2a33; color:#ff9a9a; border-radius:8px; padding:7px 10px; margin-top:8px; font-size:13px; white-space:pre-wrap; }
+  .ok { color:var(--good); } .bad { color:var(--bad); }
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:12px 16px; color:var(--muted); }
+  body.dragging .drop { border-color:var(--accent); color:var(--accent); }
+  .spinner { width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin 0.9s linear infinite; display:inline-block; vertical-align:-2px; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .hidden { display:none !important; }
+
+  #wavewrap { position:relative; width:100%; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#0b0e14; touch-action:none; }
+  #wavewrap canvas { position:absolute; left:0; top:0; display:block; }
+  #overlay { cursor:crosshair; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px; }
+  .toolbar .time { font-variant-numeric:tabular-nums; color:var(--muted); min-width:170px; }
+  #scroll { width:100%; margin:8px 0 0; accent-color:var(--accent2); }
+  .legend { display:flex; gap:16px; font-size:12px; color:var(--muted); margin-top:6px; flex-wrap:wrap; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tr.sel td { background:#27304a; }
+  tr.segrow { cursor:pointer; }
+  td input { width:96px; padding:3px 6px; }
+  .scroller { max-height:260px; overflow:auto; }
+
+  label.field { display:grid; grid-template-columns:140px 1fr 64px; gap:10px; align-items:center; margin:6px 0; }
+  label.field input[type=range] { width:100%; accent-color:var(--accent); }
+  label.field output { text-align:right; font-variant-numeric:tabular-nums; color:var(--muted); }
+  details summary { cursor:pointer; color:var(--muted); margin-top:8px; }
+  textarea { width:100%; min-height:90px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 5px; font-size:12px; }
+  a { color:var(--accent2); }
+  .help li { margin:3px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>lead<span>cut</span></h1>
+  <span class="muted">remove only the lead vocal, only where you choose</span>
+  <span class="sp"></span>
+  <button id="quit" class="small danger" title="Stop the local server">Quit</button>
+</header>
+
+<main>
+  <!-- ------------------------------------------------------------ song -->
+  <section class="card" id="songcard">
+    <h2>1 &middot; Song</h2>
+    <div class="row">
+      <input type="file" id="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac,.ogg,.opus,.wma" class="hidden">
+      <button id="choose" class="primary">Choose song&hellip;</button>
+      <span class="drop" id="drop">or drop an audio file anywhere on this page</span>
+      <select id="library" title="Songs you already analysed"><option value="">Open a previous song&hellip;</option></select>
+      <button id="forget" class="small danger hidden" title="Delete this song's cached files">Remove</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="muted">Model
+        <select id="model"></select>
+      </label>
+      <button id="analyse" disabled>Analyse</button>
+      <span id="status" class="muted"></span>
+    </div>
+    <details>
+      <summary>Advanced</summary>
+      <label class="muted">Lead stem name <input type="text" id="leadstem" placeholder="leave empty (automatic)" style="width:210px">
+      </label>
+      <span class="muted" style="font-size:12px">Only if the result is clearly the wrong half (e.g. you hear only the music). Try <code>vocals</code> or <code>instrumental</code>. Re-analyses the song.</span>
+    </details>
+    <div class="muted" id="modeldesc" style="margin-top:6px"></div>
+    <div id="songerr"></div>
+    <div id="songwarn"></div>
+  </section>
+
+  <!-- ---------------------------------------------------------- editor -->
+  <section class="card hidden" id="editor">
+    <h2>2 &middot; Waveform &amp; segments</h2>
+    <div class="row" style="margin-bottom:8px">
+      <strong id="songname"></strong>
+      <span class="chip" id="chipinfo"></span>
+      <span class="chip" id="chipmodel"></span>
+    </div>
+    <div class="toolbar">
+      <button id="play" class="primary" style="min-width:84px">&#9654; Play</button>
+      <span class="seg" id="ab">
+        <button data-m="orig">Original</button>
+        <button data-m="proc" class="on">Lead removed</button>
+      </span>
+      <label class="muted"><input type="checkbox" id="loop"> loop selected</label>
+      <span class="seg">
+        <button id="zout" title="Zoom out">&minus;</button>
+        <button id="zin" title="Zoom in">+</button>
+        <button id="zfit" title="Show whole song">Fit</button>
+      </span>
+      <span class="time" id="time">0:00.000 / 0:00.000</span>
+      <span class="muted" id="pvstatus"></span>
+    </div>
+    <div id="wavewrap"><canvas id="wave"></canvas><canvas id="overlay"></canvas></div>
+    <input type="range" id="scroll" min="0" max="1000" value="0">
+    <div class="legend">
+      <span><i style="background:#5b7fb8"></i>full song</span>
+      <span><i style="background:#e8873a"></i>estimated lead vocal</span>
+      <span><i style="background:rgba(255,184,77,.55)"></i>segments where the lead is removed</span>
+    </div>
+    <details class="help">
+      <summary>How to use the waveform</summary>
+      <ul class="muted">
+        <li><b>Click</b> the waveform to move the playhead. <b>Drag</b> on empty space to create a segment.</li>
+        <li>Drag a segment's <b>edges</b> to resize it, or its <b>body</b> to move it. <kbd>Delete</kbd> removes the selected one, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</li>
+        <li><b>Mouse wheel</b> zooms at the pointer, <b>Shift + wheel</b> (or the slider) scrolls sideways.</li>
+        <li><kbd>Space</kbd> plays/pauses. Use <b>Original / Lead removed</b> to compare at the same position.</li>
+        <li>Anything outside the orange segments is left <b>exactly</b> as in your file.</li>
+        <li>The preview you hear is 16-bit so it starts instantly (it restarts after each edit). <b>Export keeps full quality.</b></li>
+      </ul>
+    </details>
+  </section>
+
+  <div class="grid hidden" id="panels">
+    <!-- -------------------------------------------------------- segments -->
+    <section class="card">
+      <h2>Segments</h2>
+      <div class="row" style="margin-bottom:8px">
+        <button id="addseg" class="small">+ Add 5 s at playhead</button>
+        <button id="wholesong" class="small">Whole song</button>
+        <button id="clearsegs" class="small danger">Clear all</button>
+        <button id="undo" class="small">Undo</button>
+        <span class="muted" id="segsummary"></span>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>#</th><th>Start</th><th>End</th><th>Length</th><th></th></tr></thead>
+          <tbody id="segbody"></tbody>
+        </table>
+      </div>
+      <details>
+        <summary>Edit as text / copy</summary>
+        <textarea id="segtext" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:6px"><button id="applytext" class="small">Apply text</button><button id="copytext" class="small">Copy</button><span class="muted">one range per line, e.g. 0:45.0-1:30.5</span></div>
+      </details>
+    </section>
+
+    <!-- --------------------------------------------------------- settings -->
+    <section class="card">
+      <h2>3 &middot; Settings</h2>
+      <label class="field">Strength <input type="range" id="strength" min="0" max="1.5" step="0.01" value="1"><output id="strengthv"></output></label>
+      <div class="muted" style="margin:-2px 0 8px 150px;font-size:12px">1.00 removes the full lead estimate. Try 0.85&ndash;0.95 to keep more of a quiet chorus.</div>
+      <label class="field">Crossfade <input type="range" id="fade" min="0" max="500" step="5" value="80"><output id="fadev"></output></label>
+      <details>
+        <summary>Auto-detect settings</summary>
+        <label class="field">Sensitivity <input type="range" id="d_thr" min="-50" max="-10" step="1" value="-28"><output id="d_thrv"></output></label>
+        <label class="field">Fill pauses &lt; <input type="range" id="d_gap" min="0" max="3" step="0.1" value="0.8"><output id="d_gapv"></output></label>
+        <label class="field">Ignore blips &lt; <input type="range" id="d_len" min="0" max="3" step="0.1" value="0.5"><output id="d_lenv"></output></label>
+        <label class="field">Padding <input type="range" id="d_pad" min="0" max="1" step="0.05" value="0.2"><output id="d_padv"></output></label>
+        <div class="row"><button id="redetect" class="small">Re-detect segments</button><span class="muted">replaces your current segments (Undo brings them back)</span></div>
+      </details>
+    </section>
+
+    <!-- ----------------------------------------------------------- export -->
+    <section class="card">
+      <h2>4 &middot; Export</h2>
+      <div class="row">
+        <label class="muted">Format
+          <select id="fmt"><option value="flac">FLAC (lossless)</option><option value="wav">WAV</option></select>
+        </label>
+        <label class="muted">Bit depth
+          <select id="bits"><option value="24">24-bit</option><option value="16">16-bit</option><option value="32" disabled>32-bit float (WAV)</option></select>
+        </label>
+        <button id="export" class="primary">Export full-quality file</button>
+      </div>
+      <div class="muted" style="margin-top:6px;font-size:12px">24-bit keeps untouched parts exact even for 16-bit sources. Files are saved to <span id="outdir"></span></div>
+      <div id="exportres"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const HDR = { 'X-Leadcut': '1' };
+const MIN_SEG = 0.05;   // seconds
+
+/* ------------------------------------------------------------- helpers */
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: 'POST', headers: { ...HDR, 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  let data = {};
+  try { data = await r.json(); } catch (e) { /* non-JSON error */ }
+  if (!r.ok) throw new Error(data.error || (r.status + ' ' + r.statusText));
+  return data;
+}
+const fmt = t => { t = Math.max(0, t); const m = Math.floor(t / 60); return m + ':' + (t - 60 * m).toFixed(3).padStart(6, '0'); };
+function parseTime(s) {
+  s = String(s).trim().toLowerCase();
+  if (s === 'end' && S.info) return S.info.duration;
+  const p = s.split(':');
+  if (p.length < 1 || p.length > 3 || p.some(x => x.trim() === '' || isNaN(Number(x)) || Number(x) < 0)) return NaN;
+  return p.reduce((acc, x) => acc * 60 + Number(x), 0);
+}
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* --------------------------------------------------------------- state */
+const S = {
+  id: null, info: null, segs: [], sel: -1,
+  strength: 1, fadeMs: 80,
+  view: { start: 0, dur: 1 }, cursor: 0,
+  mode: 'proc', loop: false, undo: [],
+  previewReady: false, wantPlay: false,
+};
+const aO = new Audio(), aP = new Audio();
+aO.preload = aP.preload = 'auto';
+const active = () => (S.mode === 'orig' ? aO : aP);
+
+/* --------------------------------------------------------- canvas layer */
+const wrap = $('#wavewrap'), wave = $('#wave'), ov = $('#overlay');
+const wctx = wave.getContext('2d'), octx = ov.getContext('2d');
+const RULER = 24, LANE = 104, GAP = 6, TOTAL_H = RULER + LANE * 2 + GAP * 2;
+let W = 800;
+
+function layout() {
+  const dpr = window.devicePixelRatio || 1;
+  W = Math.max(300, wrap.clientWidth);
+  wrap.style.height = TOTAL_H + 'px';
+  for (const c of [wave, ov]) {
+    c.width = Math.round(W * dpr); c.height = Math.round(TOTAL_H * dpr);
+    c.style.width = W + 'px'; c.style.height = TOTAL_H + 'px';
+    c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  draw();
+}
+const t2x = t => (t - S.view.start) / S.view.dur * W;
+const x2t = x => S.view.start + x / W * S.view.dur;
+
+function drawLane(ctx, y0, mins, maxs, scale, color) {
+  const n = mins.length, bps = n / S.info.duration, mid = y0 + LANE / 2, amp = LANE / 2 - 3;
+  ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(0, y0, W, LANE);
+  ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(0, mid, W, 1);
+  ctx.fillStyle = color;
+  for (let x = 0; x < W; x++) {
+    let i0 = Math.floor(x2t(x) * bps), i1 = Math.ceil(x2t(x + 1) * bps);
+    if (i1 <= i0) i1 = i0 + 1;
+    i0 = Math.max(0, i0); i1 = Math.min(n, i1);
+    if (i0 >= i1) continue;
+    let lo = 1e9, hi = -1e9;
+    for (let i = i0; i < i1; i++) { if (mins[i] < lo) lo = mins[i]; if (maxs[i] > hi) hi = maxs[i]; }
+    const yTop = mid - clamp(hi / scale, -1, 1) * amp, yBot = mid - clamp(lo / scale, -1, 1) * amp;
+    ctx.fillRect(x, yTop, 1, Math.max(1, yBot - yTop));
+  }
+}
+
+function drawRuler(ctx) {
+  ctx.fillStyle = '#121722'; ctx.fillRect(0, 0, W, RULER);
+  const pps = W / S.view.dur;
+  const steps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const step = steps.find(s => s * pps >= 80) || 600;
+  ctx.fillStyle = '#8c96ab'; ctx.font = '11px system-ui'; ctx.textBaseline = 'middle';
+  for (let t = Math.ceil(S.view.start / step) * step; t < S.view.start + S.view.dur; t += step) {
+    const x = Math.round(t2x(t)) + 0.5;
+    ctx.fillRect(x - 0.5, RULER - 8, 1, 8);
+    ctx.fillText(fmt(t).replace(/\.000$/, ''), x + 4, RULER / 2 - 1);
+  }
+}
+
+function drawRegions(ctx) {
+  S.segs.forEach((s, i) => {
+    const x0 = t2x(s[0]), x1 = t2x(s[1]);
+    if (x1 < -10 || x0 > W + 10) return;
+    const sel = i === S.sel;
+    ctx.fillStyle = sel ? 'rgba(255,184,77,0.30)' : 'rgba(255,184,77,0.16)';
+    ctx.fillRect(x0, RULER, x1 - x0, TOTAL_H - RULER);
+    ctx.fillStyle = sel ? '#ffd27d' : '#ffb84d';
+    ctx.fillRect(x0 - 1, RULER, 3, TOTAL_H - RULER);
+    ctx.fillRect(x1 - 2, RULER, 3, TOTAL_H - RULER);
+    // grab handles
+    for (const x of [x0, x1]) { ctx.fillRect(x - 5, (RULER + TOTAL_H) / 2 - 12, 10, 24); }
+    ctx.fillStyle = '#1a1305'; ctx.font = '600 11px system-ui'; ctx.textBaseline = 'middle';
+    if (x1 - x0 > 24) ctx.fillText(String(i + 1), Math.max(x0, 0) + 8, RULER + 10);
+    if (sel) {
+      ctx.fillStyle = '#ffd27d'; ctx.font = '11px system-ui';
+      ctx.fillText(fmt(s[0]) + ' – ' + fmt(s[1]), clamp(x0 + 6, 4, W - 150), TOTAL_H - 8);
+    }
+  });
+}
+
+function draw() {
+  if (!S.info) return;
+  const ctx = wctx, P = S.info.peaks;
+  ctx.clearRect(0, 0, W, TOTAL_H);
+  drawRuler(ctx);
+  drawLane(ctx, RULER + GAP / 2, P.orig_min, P.orig_max, P.orig_scale, '#5b7fb8');
+  drawLane(ctx, RULER + GAP * 1.5 + LANE, P.lead_min, P.lead_max, P.lead_scale, '#e8873a');
+  ctx.fillStyle = '#8c96ab'; ctx.font = '11px system-ui'; ctx.textBaseline = 'top';
+  ctx.fillText('FULL SONG', 6, RULER + 6); ctx.fillText('LEAD VOCAL (estimate)', 6, RULER + GAP * 1.5 + LANE + 4);
+  drawRegions(ctx);
+  drawOverlay();
+  const sc = $('#scroll'), span = S.info.duration - S.view.dur;
+  sc.disabled = span <= 0.001;
+  sc.value = span > 0 ? Math.round(S.view.start / span * 1000) : 0;
+}
+
+let creating = null;   // in-progress drag-to-create rectangle (seconds)
+function drawOverlay() {
+  octx.clearRect(0, 0, W, TOTAL_H);
+  if (!S.info) return;
+  if (creating) {
+    const a = t2x(Math.min(creating.t0, creating.t1)), b = t2x(Math.max(creating.t0, creating.t1));
+    octx.fillStyle = 'rgba(77,163,255,0.25)'; octx.fillRect(a, RULER, b - a, TOTAL_H - RULER);
+    octx.strokeStyle = '#4da3ff'; octx.strokeRect(a + 0.5, RULER + 0.5, b - a, TOTAL_H - RULER - 1);
+  }
+  const x = t2x(S.cursor);
+  if (x >= -2 && x <= W + 2) {
+    octx.fillStyle = '#ffffff'; octx.fillRect(Math.round(x) - 1, 0, 2, TOTAL_H);
+    octx.beginPath(); octx.moveTo(x - 6, 0); octx.lineTo(x + 6, 0); octx.lineTo(x, 8); octx.closePath(); octx.fill();
+  }
+}
+
+/* ---------------------------------------------------------------- view */
+function setView(start, dur) {
+  const D = S.info.duration;
+  dur = clamp(dur, Math.min(0.5, D), D);
+  S.view.dur = dur; S.view.start = clamp(start, 0, D - dur);
+  draw();
+}
+function zoomAt(tAnchor, factor) {
+  const frac = (tAnchor - S.view.start) / S.view.dur, nd = clamp(S.view.dur * factor, Math.min(0.5, S.info.duration), S.info.duration);
+  setView(tAnchor - frac * nd, nd);
+}
+
+/* --------------------------------------------------------- hit testing */
+function hitTest(x) {
+  const TOL = 7;
+  let best = null;
+  S.segs.forEach((s, i) => {
+    const d0 = Math.abs(x - t2x(s[0])), d1 = Math.abs(x - t2x(s[1]));
+    if (d0 <= TOL && (!best || d0 < best.d)) best = { type: 'edgeL', i, d: d0 };
+    if (d1 <= TOL && (!best || d1 < best.d)) best = { type: 'edgeR', i, d: d1 };
+  });
+  if (best) return best;
+  for (let i = 0; i < S.segs.length; i++) {
+    if (x > t2x(S.segs[i][0]) && x < t2x(S.segs[i][1])) return { type: 'body', i };
+  }
+  return { type: 'empty' };
+}
+
+/* ------------------------------------------------------- segment edits */
+function pushUndo(snapshot) { S.undo.push(snapshot); if (S.undo.length > 100) S.undo.shift(); $('#undo').disabled = false; }
+function normalise(keepMid) {
+  S.segs = S.segs.filter(s => s[1] - s[0] >= MIN_SEG).sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const s of S.segs) {
+    if (out.length && s[0] <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(out[out.length - 1][1], s[1]);
+    else out.push([s[0], s[1]]);
+  }
+  S.segs = out;
+  S.sel = keepMid == null ? -1 : out.findIndex(s => keepMid >= s[0] && keepMid <= s[1]);
+}
+function commitSegments(undoSnapshot) {
+  if (undoSnapshot !== undefined && undoSnapshot === JSON.stringify(S.segs)) { renderTable(); draw(); return; }  // nothing changed
+  if (undoSnapshot !== undefined) pushUndo(undoSnapshot);
+  renderTable(); draw(); schedulePreview();
+}
+function undo() {
+  if (!S.undo.length) return;
+  S.segs = JSON.parse(S.undo.pop()); S.sel = -1;
+  $('#undo').disabled = !S.undo.length;
+  renderTable(); draw(); schedulePreview();
+}
+
+let drag = null;
+ov.addEventListener('pointerdown', e => {
+  if (!S.info) return;
+  ov.setPointerCapture(e.pointerId);
+  const x = e.offsetX, t = x2t(x), hit = hitTest(x), snap = JSON.stringify(S.segs);
+  if (hit.type === 'edgeL' || hit.type === 'edgeR') { S.sel = hit.i; drag = { type: hit.type, i: hit.i, snap }; }
+  else if (hit.type === 'body') { S.sel = hit.i; const s = S.segs[hit.i]; drag = { type: 'body', i: hit.i, off: t - s[0], len: s[1] - s[0], snap, x0: x, moved: false }; }
+  else { drag = { type: 'new', x0: x, t0: t, snap, moved: false }; creating = null; }
+  renderTable(); draw();
+});
+ov.addEventListener('pointermove', e => {
+  if (!S.info) return;
+  const x = e.offsetX, t = clamp(x2t(x), 0, S.info.duration);
+  if (!drag) {
+    const h = hitTest(x);
+    ov.style.cursor = h.type === 'edgeL' || h.type === 'edgeR' ? 'ew-resize' : h.type === 'body' ? 'grab' : 'crosshair';
+    return;
+  }
+  const s = S.segs[drag.i];
+  if (drag.type === 'edgeL') s[0] = clamp(t, 0, s[1] - MIN_SEG);
+  else if (drag.type === 'edgeR') s[1] = clamp(t, s[0] + MIN_SEG, S.info.duration);
+  else if (drag.type === 'body') {
+    if (Math.abs(x - drag.x0) > 3) drag.moved = true;
+    if (drag.moved) { const ns = clamp(t - drag.off, 0, S.info.duration - drag.len); s[0] = ns; s[1] = ns + drag.len; }
+  } else if (drag.type === 'new') {
+    if (Math.abs(x - drag.x0) > 4) drag.moved = true;
+    if (drag.moved) creating = { t0: drag.t0, t1: t };
+  }
+  draw();
+});
+function endDrag(e) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  const t = clamp(x2t(e.offsetX), 0, S.info.duration);
+  if (d.type === 'new') {
+    if (d.moved && creating) {
+      const a = Math.min(creating.t0, creating.t1), b = Math.max(creating.t0, creating.t1);
+      creating = null;
+      if (b - a >= MIN_SEG) { S.segs.push([a, b]); normalise((a + b) / 2); commitSegments(d.snap); return; }
+    }
+    creating = null; S.sel = -1; seek(t); renderTable(); draw(); return;
+  }
+  if (d.type === 'body' && !d.moved) { seek(t); renderTable(); draw(); return; }
+  const s = S.segs[d.i], mid = (s[0] + s[1]) / 2;
+  normalise(mid); commitSegments(d.snap);
+}
+ov.addEventListener('pointerup', endDrag);
+ov.addEventListener('pointercancel', e => { if (drag) { S.segs = JSON.parse(drag.snap); drag = null; creating = null; renderTable(); draw(); } });
+ov.addEventListener('wheel', e => {
+  if (!S.info) return;
+  e.preventDefault();
+  if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) setView(S.view.start + (e.deltaX || e.deltaY) / W * S.view.dur, S.view.dur);
+  else zoomAt(x2t(e.offsetX), Math.exp(e.deltaY * 0.0015));
+}, { passive: false });
+$('#scroll').addEventListener('input', e => { const span = S.info.duration - S.view.dur; setView(span * e.target.value / 1000, S.view.dur); });
+$('#zin').onclick = () => zoomAt(S.view.start + S.view.dur / 2, 0.5);
+$('#zout').onclick = () => zoomAt(S.view.start + S.view.dur / 2, 2);
+$('#zfit').onclick = () => setView(0, S.info.duration);
+window.addEventListener('resize', () => { if (S.info) layout(); });
+
+/* ------------------------------------------------------------ playback */
+let raf = null;
+function seek(t) {
+  S.cursor = clamp(t, 0, S.info.duration);
+  for (const a of [aO, aP]) { try { a.currentTime = S.cursor; } catch (e) { /* not loaded yet */ } }
+  drawOverlay(); updateTime();
+}
+function updateTime() { $('#time').textContent = fmt(S.cursor) + ' / ' + fmt(S.info ? S.info.duration : 0); }
+function updatePlayBtn() { $('#play').innerHTML = active().paused ? '&#9654; Play' : '&#10074;&#10074; Pause'; }
+function startRaf() { if (!raf) raf = requestAnimationFrame(tick); }
+function tick() {
+  raf = null;
+  if (!S.info) return;
+  const a = active();
+  if (!a.paused) {
+    S.cursor = a.currentTime;
+    const sel = S.segs[S.sel];
+    if (S.loop && sel && S.cursor >= sel[1]) seek(sel[0]);
+    if (S.cursor < S.view.start || S.cursor > S.view.start + S.view.dur) setView(S.cursor - 0.1 * S.view.dur, S.view.dur);
+  }
+  drawOverlay(); updateTime(); updatePlayBtn();
+  if (!a.paused) raf = requestAnimationFrame(tick);
+}
+function play() {
+  if (!S.info) return;
+  if (S.mode === 'proc' && !S.previewReady) { S.wantPlay = true; $('#pvstatus').textContent = 'Building preview, playback starts when it is ready ...'; return; }
+  const sel = S.segs[S.sel];
+  if (S.loop && sel && (S.cursor < sel[0] || S.cursor >= sel[1])) seek(sel[0]);
+  else seek(S.cursor);
+  active().play().catch(err => showSongError('Playback failed: ' + err.message));
+  startRaf();
+}
+function pause() { S.wantPlay = false; aO.pause(); aP.pause(); updatePlayBtn(); drawOverlay(); }
+function togglePlay() { (active().paused ? play : pause)(); }
+for (const a of [aO, aP]) {
+  a.addEventListener('play', () => { updatePlayBtn(); startRaf(); });
+  a.addEventListener('pause', updatePlayBtn);
+  a.addEventListener('ended', () => { if (a === active()) { S.cursor = 0; updatePlayBtn(); drawOverlay(); updateTime(); } });
+}
+function setMode(m) {
+  if (m === S.mode) return;
+  const a = active(), t = a.paused ? S.cursor : a.currentTime, playing = !a.paused;
+  a.pause(); S.mode = m;
+  document.querySelectorAll('#ab button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  seek(t);
+  if (playing) play(); else updatePlayBtn();
+}
+document.querySelectorAll('#ab button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+$('#play').onclick = togglePlay;
+$('#loop').onchange = e => { S.loop = e.target.checked; };
+
+/* ----------------------------------------------------- preview (render) */
+let renderTimer = null, rendering = false, renderAgain = false;
+function schedulePreview() {
+  $('#pvstatus').textContent = 'Preview out of date ...';
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(doRender, 450);
+}
+async function doRender() {
+  if (!S.info) return;
+  if (rendering) { renderAgain = true; return; }
+  rendering = true;
+  $('#pvstatus').innerHTML = '<span class="spinner"></span>Updating preview ...';
+  try {
+    const res = await api('/api/render', { id: S.id, segments: S.segs, strength: S.strength, fade_ms: S.fadeMs });
+    if (!S.info) return;   // song was closed while rendering
+    swapPreview(res.url);
+    $('#segsummary').textContent = res.n_segments + ' segment(s), ' + res.covered_s.toFixed(1) + ' s of ' + S.info.duration.toFixed(1) + ' s processed' + (res.clipped ? ' · WARNING: peaks above full scale' : '');
+  } catch (e) {
+    if (!S.info) return;
+    $('#pvstatus').textContent = '';
+    showSongError('Preview failed: ' + e.message);
+  } finally {
+    rendering = false;
+    if (renderAgain) { renderAgain = false; doRender(); }
+  }
+}
+let swapToken = 0;
+function swapPreview(url) {
+  const my = ++swapToken, t = S.cursor, wasPlaying = S.mode === 'proc' && !aP.paused;
+  aP.pause(); S.previewReady = false;
+  aP.src = url;
+  aP.addEventListener('loadedmetadata', () => {
+    if (my !== swapToken) return;   // a newer preview replaced this one
+    try { aP.currentTime = t; } catch (e) { /* ignore */ }
+    S.previewReady = true; $('#pvstatus').textContent = 'Preview up to date';
+    if (wasPlaying || S.wantPlay) { S.wantPlay = false; if (S.mode === 'proc') { aP.play().catch(() => {}); startRaf(); } }
+    updatePlayBtn();
+  }, { once: true });
+  aP.load();
+}
+
+/* ------------------------------------------------------- segment table */
+function renderTable() {
+  const body = $('#segbody');
+  body.innerHTML = S.segs.map((s, i) =>
+    `<tr class="segrow ${i === S.sel ? 'sel' : ''}" data-i="${i}">
+       <td>${i + 1}</td>
+       <td><input type="text" data-i="${i}" data-k="0" value="${fmt(s[0])}"></td>
+       <td><input type="text" data-i="${i}" data-k="1" value="${fmt(s[1])}"></td>
+       <td class="muted">${(s[1] - s[0]).toFixed(2)} s</td>
+       <td><button class="small danger" data-del="${i}" title="Remove this segment">&times;</button></td>
+     </tr>`).join('') || '<tr><td colspan="5" class="muted">No segments: nothing will be removed. Drag on the waveform, click “Add”, or re-detect.</td></tr>';
+  $('#segtext').value = S.segs.map(s => fmt(s[0]) + '-' + fmt(s[1])).join('\n');
+}
+$('#segbody').addEventListener('click', e => {
+  const del = e.target.closest('[data-del]');
+  if (del) { const snap = JSON.stringify(S.segs); S.segs.splice(+del.dataset.del, 1); S.sel = -1; commitSegments(snap); return; }
+  const row = e.target.closest('tr.segrow');
+  if (row && e.target.tagName !== 'INPUT') {
+    S.sel = +row.dataset.i; const s = S.segs[S.sel];
+    if (s[1] < S.view.start || s[0] > S.view.start + S.view.dur) setView(s[0] - 0.1 * S.view.dur, S.view.dur);
+    seek(s[0]); renderTable(); draw();
+  }
+});
+$('#segbody').addEventListener('focusin', e => {
+  const inp = e.target; if (inp.tagName !== 'INPUT') return;
+  const i = +inp.dataset.i;
+  if (S.sel === i) return;
+  S.sel = i;
+  document.querySelectorAll('#segbody tr.segrow').forEach(r => r.classList.toggle('sel', +r.dataset.i === i));
+  draw();
+});
+$('#segbody').addEventListener('change', e => {
+  const inp = e.target; if (inp.tagName !== 'INPUT') return;
+  const i = +inp.dataset.i, k = +inp.dataset.k, v = parseTime(inp.value), snap = JSON.stringify(S.segs);
+  const s = S.segs[i];
+  const lo = k === 0 ? 0 : s[0] + MIN_SEG, hi = k === 0 ? s[1] - MIN_SEG : S.info.duration;
+  if (isNaN(v) || v < lo || v > hi) { inp.value = fmt(s[k]); return; }   // invalid: revert
+  s[k] = v; normalise((s[0] + s[1]) / 2); commitSegments(snap);
+});
+$('#addseg').onclick = () => {
+  const snap = JSON.stringify(S.segs), a = S.cursor, b = Math.min(S.info.duration, a + 5);
+  if (b - a < MIN_SEG) return;
+  S.segs.push([a, b]); normalise((a + b) / 2); commitSegments(snap);
+};
+$('#wholesong').onclick = () => { const snap = JSON.stringify(S.segs); S.segs = [[0, S.info.duration]]; S.sel = 0; commitSegments(snap); };
+$('#clearsegs').onclick = () => { if (!S.segs.length) return; const snap = JSON.stringify(S.segs); S.segs = []; S.sel = -1; commitSegments(snap); };
+$('#undo').onclick = undo;
+$('#copytext').onclick = () => navigator.clipboard && navigator.clipboard.writeText($('#segtext').value);
+$('#applytext').onclick = () => {
+  const out = [];
+  for (const raw of $('#segtext').value.split(/\n|;|,/)) {
+    const line = raw.split('#')[0].trim(); if (!line) continue;
+    const m = line.match(/^(\S+?)\s*(?:-|–|—|to)\s*(\S+)$/i);
+    const a = m ? parseTime(m[1]) : NaN, b = m ? parseTime(m[2]) : NaN;
+    if (isNaN(a) || isNaN(b) || b <= a) { alert('Could not read this line:\n' + raw.trim()); return; }
+    out.push([clamp(a, 0, S.info.duration), clamp(b, 0, S.info.duration)]);
+  }
+  const snap = JSON.stringify(S.segs); S.segs = out; normalise(null); commitSegments(snap);
+};
+
+/* ------------------------------------------------------------ settings */
+function bindSlider(id, fmtFn, onInput) {
+  const el = $('#' + id), out = $('#' + id + 'v');
+  const upd = () => { out.textContent = fmtFn(+el.value); };
+  el.addEventListener('input', () => { upd(); if (onInput) onInput(+el.value); });
+  upd();
+  return { set(v) { el.value = v; upd(); } };
+}
+const sStrength = bindSlider('strength', v => v.toFixed(2), v => { S.strength = v; schedulePreview(); });
+const sFade = bindSlider('fade', v => v + ' ms', v => { S.fadeMs = v; schedulePreview(); });
+bindSlider('d_thr', v => v + ' dB'); bindSlider('d_gap', v => v.toFixed(1) + ' s');
+bindSlider('d_len', v => v.toFixed(1) + ' s'); bindSlider('d_pad', v => v.toFixed(2) + ' s');
+$('#redetect').onclick = async () => {
+  if (!S.info) return;
+  const btn = $('#redetect'); btn.disabled = true;
+  try {
+    const r = await api('/api/detect', { id: S.id, threshold_db: +$('#d_thr').value, min_gap: +$('#d_gap').value, min_len: +$('#d_len').value, pad: +$('#d_pad').value });
+    const snap = JSON.stringify(S.segs); S.segs = r.segments; S.sel = -1; commitSegments(snap);
+  } catch (e) { showSongError(e.message); } finally { btn.disabled = false; }
+};
+
+/* -------------------------------------------------------------- export */
+$('#fmt').onchange = () => {
+  const flac = $('#fmt').value === 'flac', opt = $('#bits option[value="32"]');
+  opt.disabled = flac; if (flac && $('#bits').value === '32') $('#bits').value = '24';
+};
+$('#export').onclick = async () => {
+  const btn = $('#export'), res = $('#exportres'); btn.disabled = true;
+  res.innerHTML = '<div class="muted" style="margin-top:8px"><span class="spinner"></span>Rendering and verifying ...</div>';
+  try {
+    const r = await api('/api/export', { id: S.id, segments: S.segs, strength: S.strength, fade_ms: S.fadeMs, format: $('#fmt').value, bit_depth: +$('#bits').value });
+    const okMem = r.memory_ok ? '<span class="ok">✓ identical</span>' : '<span class="bad">✗ differs</span>';
+    const okDisk = r.disk_ok ? '<span class="ok">✓ identical</span>' : '<span class="bad">✗ differs (see README)</span>';
+    res.innerHTML = `<div style="margin-top:10px">
+      <div><b>Saved:</b> <code>${esc(r.path)}</code> <span class="muted">(${(r.size / 1048576).toFixed(1)} MB, ${r.sr} Hz, ${r.channels} ch, ${r.bit_depth}-bit)</span></div>
+      <div>Parts outside your segments, checked in memory: ${okMem}</div>
+      <div>Parts outside your segments, checked from the file: ${okDisk}</div>
+      ${r.clipped ? '<div class="warn">The result peaks above full scale and may clip. Lower the strength, or export 32-bit float WAV.</div>' : ''}
+      <div style="margin-top:8px"><a href="${r.download_url}" download>Download a copy</a></div></div>`;
+  } catch (e) { res.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+  finally { btn.disabled = false; }
+};
+
+/* ------------------------------------------------------ song / library */
+let cfg = null;
+function showSongError(msg) { $('#songerr').innerHTML = msg ? '<div class="err">' + esc(msg) + '</div>' : ''; }
+function fillLibrary() {
+  const sel = $('#library'), cur = S.id || sel.value;
+  sel.innerHTML = '<option value="">Open a previous song…</option>' + cfg.library.map(it =>
+    `<option value="${it.id}">${esc(it.name)} ${it.analysed_models.length ? '· analysed' : ''}</option>`).join('');
+  sel.value = cfg.library.some(i => i.id === cur) ? cur : '';
+  $('#forget').classList.toggle('hidden', !sel.value);
+}
+async function refreshConfig() { cfg = await api('/api/config'); fillLibrary(); return cfg; }
+function modelDesc() { const m = cfg.models.find(x => x.key === $('#model').value); $('#modeldesc').textContent = m ? m.description : ''; }
+$('#model').onchange = modelDesc;
+
+$('#choose').onclick = () => $('#file').click();
+$('#file').onchange = e => { if (e.target.files[0]) uploadFile(e.target.files[0]); e.target.value = ''; };
+['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); document.body.classList.add('dragging'); }));
+['dragleave', 'drop'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); document.body.classList.remove('dragging'); }));
+window.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) uploadFile(f); });
+
+function setBusy(msg) { $('#status').innerHTML = msg ? '<span class="spinner"></span>' + esc(msg) : ''; }
+async function uploadFile(file) {
+  showSongError('');
+  setBusy('Uploading ' + file.name + ' ...');
+  try {
+    const r = await fetch('/api/upload?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { ...HDR, 'Content-Type': 'application/octet-stream' }, body: file });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    S.id = data.id; await refreshConfig(); $('#library').value = S.id; $('#forget').classList.remove('hidden');
+    await startAnalyse();
+  } catch (e) { setBusy(''); showSongError(e.message); }
+}
+$('#library').onchange = async () => {
+  const id = $('#library').value; $('#forget').classList.toggle('hidden', !id);
+  if (!id) return;
+  S.id = id; showSongError(''); await startAnalyse();
+};
+$('#forget').onclick = async () => {
+  const id = $('#library').value; if (!id || !confirm('Delete this song and all its cached stems? Exported files are not touched.')) return;
+  try { await api('/api/forget', { id }); if (S.id === id) { resetEditor(); } await refreshConfig(); } catch (e) { showSongError(e.message); }
+};
+$('#analyse').onclick = () => startAnalyse();
+
+async function startAnalyse() {
+  if (!S.id) return;
+  showSongError(''); $('#analyse').disabled = true;
+  try { await api('/api/analyse', { id: S.id, model: $('#model').value, lead_stem: $('#leadstem').value.trim() }); watchJob(); }
+  catch (e) { setBusy(''); showSongError(e.message); $('#analyse').disabled = false; }
+}
+let pollTimer = null;
+function watchJob() {
+  clearInterval(pollTimer);
+  const poll = async () => {
+    try {
+      const j = await api('/api/job');
+      if (j.state === 'running') { setBusy(j.message + '  (' + j.elapsed.toFixed(0) + ' s)'); return; }
+      clearInterval(pollTimer); setBusy(''); $('#analyse').disabled = false;
+      if (j.state === 'done') { await refreshConfig(); await loadSong(j.song_id); }
+      else if (j.state === 'error') showSongError('Analysis failed: ' + j.error);
+    } catch (e) { clearInterval(pollTimer); setBusy(''); showSongError(e.message); }
+  };
+  pollTimer = setInterval(poll, 700); poll();
+}
+
+function resetEditor() {
+  pause(); clearTimeout(renderTimer); S.id = null; S.info = null; S.segs = []; S.sel = -1; S.undo = []; S.previewReady = false;
+  aO.removeAttribute('src'); aP.removeAttribute('src');
+  $('#editor').classList.add('hidden'); $('#panels').classList.add('hidden'); $('#songwarn').innerHTML = '';
+  $('#analyse').disabled = true;
+}
+
+async function loadSong(id) {
+  const info = await api('/api/song/' + id);
+  pause(); S.id = id; S.info = info; S.segs = info.segments.map(s => [s[0], s[1]]); S.sel = -1; S.undo = []; $('#undo').disabled = true;
+  S.strength = info.strength; S.fadeMs = info.fade_ms; sStrength.set(S.strength); sFade.set(S.fadeMs);
+  S.cursor = 0; S.view = { start: 0, dur: info.duration }; S.previewReady = false;
+  $('#songname').textContent = info.name;
+  $('#chipinfo').textContent = `${fmt(info.duration).replace(/\.\d+$/, '')} · ${info.sr} Hz · ${info.channels === 1 ? 'mono' : info.channels + ' ch'}`;
+  $('#chipmodel').textContent = 'model: ' + info.model;
+  $('#model').value = info.model; modelDesc();
+  $('#songwarn').innerHTML = info.warnings.map(w => '<div class="warn">' + esc(w) + '</div>').join('');
+  if (info.segments_source === 'auto') $('#songwarn').innerHTML += '<div class="muted" style="margin-top:6px">Segments were auto-detected from the estimated lead vocal. Check them against the waveform and adjust.</div>';
+  $('#analyse').disabled = false;
+  aO.src = info.original_url; aO.load();
+  $('#editor').classList.remove('hidden'); $('#panels').classList.remove('hidden');
+  layout(); renderTable(); updateTime(); updatePlayBtn();
+  await doRender();
+  $('#editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ------------------------------------------------------------ keyboard */
+function typingTarget(e) {
+  const tag = (e.target.tagName || '').toLowerCase();
+  return (tag === 'input' && e.target.type === 'text') || tag === 'textarea' || tag === 'select';
+}
+// Space is handled on keydown; cancelling keyup as well stops a focused button from also "clicking".
+window.addEventListener('keyup', e => { if (e.code === 'Space' && S.info && !typingTarget(e)) e.preventDefault(); });
+window.addEventListener('keydown', e => {
+  if (typingTarget(e) || !S.info) return;
+  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) togglePlay(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel >= 0) { e.preventDefault(); const snap = JSON.stringify(S.segs); S.segs.splice(S.sel, 1); S.sel = -1; commitSegments(snap); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); seek(S.cursor - (e.shiftKey ? 5 : 1)); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); seek(S.cursor + (e.shiftKey ? 5 : 1)); }
+});
+
+$('#quit').onclick = async () => {
+  if (!confirm('Stop the leadcut server? You can start it again with “leadcut gui”.')) return;
+  clearInterval(pollTimer); clearTimeout(renderTimer); pause(); S.info = null;
+  try { await api('/api/shutdown', {}); } catch (e) { /* server is going down */ }
+  document.body.innerHTML = '<main><div class="card"><h2>leadcut stopped</h2><p>The local server has been shut down. You can close this tab.</p></div></main>';
+};
+
+/* ---------------------------------------------------------------- boot */
+(async function boot() {
+  try {
+    await refreshConfig();
+    $('#model').innerHTML = cfg.models.map(m => `<option value="${m.key}">${esc(m.key)}</option>`).join('');
+    $('#model').value = cfg.default_model; modelDesc();
+    $('#outdir').textContent = cfg.output_dir;
+    $('#analyse').disabled = true;
+    layout();
+    const j = cfg.job;
+    if (j.state === 'running') { S.id = j.song_id; $('#library').value = S.id; watchJob(); }
+    else if (j.state === 'done' && j.song_id) { S.id = j.song_id; $('#library').value = S.id; await loadSong(j.song_id).catch(() => {}); }
+  } catch (e) { showSongError('Cannot reach the leadcut server: ' + e.message); }
+})();
+</script>
+</body>
+</html>
